@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Candlestick, Order, TechnicalIndicators } from '../types';
-import { WATCHLIST } from '../lib/marketData';
+import { WATCHLIST, addCustomTicker } from '../lib/marketData';
 import {
   calculateSMA,
   calculateEMA,
@@ -31,6 +31,16 @@ export const TradingChart: React.FC<TradingChartProps> = ({
   const [showSMA, setShowSMA] = useState(true);
   const [timeframe, setTimeframe] = useState<'1m' | '5m' | '1h' | '1D'>('1h');
   const [hoveredCandle, setHoveredCandle] = useState<Candlestick | null>(null);
+  const [newTicker, setNewTicker] = useState('');
+
+  const handleAddTicker = (e: React.FormEvent) => {
+    e.preventDefault();
+    const raw = newTicker.trim();
+    if (!raw) return;
+    const meta = addCustomTicker(raw);
+    setNewTicker('');
+    onSelectSymbol(meta.symbol);
+  };
 
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 800, height: 420 });
@@ -143,9 +153,36 @@ export const TradingChart: React.FC<TradingChartProps> = ({
                 }`}
               >
                 {ticker}
+                {WATCHLIST[ticker]?.market && (
+                  <span
+                    className={`ml-1 text-[9px] px-1 rounded ${
+                      WATCHLIST[ticker].market === 'IN'
+                        ? 'bg-orange-500/20 text-orange-300'
+                        : WATCHLIST[ticker].market === 'US'
+                        ? 'bg-blue-500/20 text-blue-300'
+                        : 'bg-slate-600/30 text-slate-300'
+                    }`}
+                  >
+                    {WATCHLIST[ticker].market === 'CUSTOM' ? 'C' : WATCHLIST[ticker].market}
+                  </span>
+                )}
               </button>
             );
           })}
+          <form onSubmit={handleAddTicker} className="flex items-center gap-1 ml-1 shrink-0">
+            <input
+              value={newTicker}
+              onChange={(e) => setNewTicker(e.target.value)}
+              placeholder="Add ticker e.g. GOOGL or WIPRO"
+              className="w-48 px-2 py-1 rounded text-xs font-mono bg-[#151b29] border border-broker-border text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/60"
+            />
+            <button
+              type="submit"
+              className="px-2.5 py-1 rounded text-xs font-medium bg-cyan-600/30 text-cyan-200 border border-cyan-500/40 hover:bg-cyan-600/50"
+            >
+              Add
+            </button>
+          </form>
         </div>
 
         {/* Live Price and Return */}

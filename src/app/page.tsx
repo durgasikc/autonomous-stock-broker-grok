@@ -280,6 +280,23 @@ export default function AutonomousBrokerApp() {
     return () => clearInterval(interval);
   }, [addLog]);
 
+  // Select a symbol, generating history for any ticker not yet loaded (e.g. custom or new NSE tickers)
+  const handleSelectSymbol = useCallback(
+    (sym: string) => {
+      setMarketData((prev) => {
+        if (prev[sym] && prev[sym].length > 0) return prev;
+        const candles = generateHistoricalCandles(sym, 80, 60);
+        const lastCandle = candles[candles.length - 1];
+        if (lastCandle) {
+          brokerManager.getSimulatedBroker().updateLivePrice(sym, lastCandle.close);
+        }
+        return { ...prev, [sym]: candles };
+      });
+      setSelectedSymbol(sym);
+    },
+    [brokerManager]
+  );
+
   // Handle Manual "Run Strategy Now"
   const handleExecuteNow = async () => {
     const series = marketData[selectedSymbol];
@@ -417,7 +434,7 @@ export default function AutonomousBrokerApp() {
           <div className="flex-1 min-h-[460px]">
             <TradingChart
               symbol={selectedSymbol}
-              onSelectSymbol={(sym) => setSelectedSymbol(sym)}
+              onSelectSymbol={handleSelectSymbol}
               candles={currentCandles}
               orders={portfolio.orders}
               latestIndicators={latestIndicators}

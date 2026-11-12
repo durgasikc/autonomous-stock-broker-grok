@@ -7,6 +7,7 @@ export interface StockMetadata {
   volatility: number; // annualized volatility e.g. 0.35
   description: string;
   sector: string;
+  market: 'US' | 'IN' | 'CUSTOM';
 }
 
 export const WATCHLIST: Record<string, StockMetadata> = {
@@ -17,6 +18,7 @@ export const WATCHLIST: Record<string, StockMetadata> = {
     volatility: 0.45,
     description: 'Semiconductors & AI Accelerated Computing',
     sector: 'Technology',
+    market: 'US',
   },
   AAPL: {
     symbol: 'AAPL',
@@ -25,6 +27,7 @@ export const WATCHLIST: Record<string, StockMetadata> = {
     volatility: 0.25,
     description: 'Consumer Electronics & Software Ecosystem',
     sector: 'Technology',
+    market: 'US',
   },
   TSLA: {
     symbol: 'TSLA',
@@ -33,6 +36,7 @@ export const WATCHLIST: Record<string, StockMetadata> = {
     volatility: 0.55,
     description: 'Electric Vehicles, Robotics & Autonomous AI',
     sector: 'Automotive',
+    market: 'US',
   },
   MSFT: {
     symbol: 'MSFT',
@@ -41,6 +45,7 @@ export const WATCHLIST: Record<string, StockMetadata> = {
     volatility: 0.22,
     description: 'Enterprise Cloud, Productivity & Azure AI',
     sector: 'Technology',
+    market: 'US',
   },
   AMZN: {
     symbol: 'AMZN',
@@ -49,6 +54,7 @@ export const WATCHLIST: Record<string, StockMetadata> = {
     volatility: 0.3,
     description: 'E-commerce, AWS Cloud Infrastructure',
     sector: 'Consumer Cyclical',
+    market: 'US',
   },
   SPY: {
     symbol: 'SPY',
@@ -57,8 +63,80 @@ export const WATCHLIST: Record<string, StockMetadata> = {
     volatility: 0.16,
     description: 'Benchmark S&P 500 Index ETF',
     sector: 'Index ETF',
+    market: 'US',
+  },
+  // Indian markets (NSE), prices in INR
+  RELIANCE: {
+    symbol: 'RELIANCE',
+    name: 'Reliance Industries Ltd.',
+    basePrice: 1450,
+    volatility: 0.28,
+    description: 'Energy, Retail & Telecom Conglomerate',
+    sector: 'Conglomerate',
+    market: 'IN',
+  },
+  TCS: {
+    symbol: 'TCS',
+    name: 'Tata Consultancy Services',
+    basePrice: 4100,
+    volatility: 0.22,
+    description: 'IT Services & Consulting',
+    sector: 'Technology',
+    market: 'IN',
+  },
+  INFY: {
+    symbol: 'INFY',
+    name: 'Infosys Ltd.',
+    basePrice: 1850,
+    volatility: 0.25,
+    description: 'IT Services & Digital Transformation',
+    sector: 'Technology',
+    market: 'IN',
+  },
+  HDFCBANK: {
+    symbol: 'HDFCBANK',
+    name: 'HDFC Bank Ltd.',
+    basePrice: 1720,
+    volatility: 0.24,
+    description: 'Private Sector Banking',
+    sector: 'Financials',
+    market: 'IN',
+  },
+  ICICIBANK: {
+    symbol: 'ICICIBANK',
+    name: 'ICICI Bank Ltd.',
+    basePrice: 1250,
+    volatility: 0.3,
+    description: 'Private Sector Banking',
+    sector: 'Financials',
+    market: 'IN',
+  },
+  NIFTYBEES: {
+    symbol: 'NIFTYBEES',
+    name: 'Nippon India Nifty BeES ETF',
+    basePrice: 265,
+    volatility: 0.16,
+    description: 'Benchmark Nifty 50 Index ETF',
+    sector: 'Index ETF',
+    market: 'IN',
   },
 };
+
+export function addCustomTicker(symbol: string, name?: string): StockMetadata {
+  const upper = symbol.toUpperCase().trim();
+  if (WATCHLIST[upper]) return WATCHLIST[upper];
+  const meta: StockMetadata = {
+    symbol: upper,
+    name: name || upper,
+    basePrice: 100 + Math.random() * 200,
+    volatility: 0.25 + Math.random() * 0.3,
+    description: 'Custom ticker',
+    sector: 'Custom',
+    market: 'CUSTOM',
+  };
+  WATCHLIST[upper] = meta;
+  return meta;
+}
 
 /**
  * Generates synthetic historical candlestick data with realistic geometric Brownian motion
