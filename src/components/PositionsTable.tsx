@@ -2,17 +2,21 @@
 
 import React from 'react';
 import { Position } from '../types';
+import { getCurrencySymbol } from '../lib/marketData';
 import { Layers, XCircle, TrendingUp, TrendingDown, Target, ShieldAlert } from 'lucide-react';
 
 interface PositionsTableProps {
   positions: Position[];
   onClosePosition: (symbol: string) => void;
+  currencySymbol?: string; // optional override; defaults to each position's own currency
 }
 
 export const PositionsTable: React.FC<PositionsTableProps> = ({
   positions,
   onClosePosition,
+  currencySymbol,
 }) => {
+  const cur = (sym: string) => currencySymbol ?? getCurrencySymbol(sym);
   return (
     <div className="bg-broker-card border border-broker-border rounded-lg overflow-hidden flex flex-col h-full select-none">
       <div className="bg-[#0f1420] border-b border-broker-border px-4 py-2.5 flex items-center justify-between">
@@ -53,18 +57,18 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                       {pos.symbol}
                     </td>
                     <td className="py-2.5 px-3 text-right text-slate-200">{pos.quantity}</td>
-                    <td className="py-2.5 px-3 text-right text-slate-300">${pos.averagePrice.toFixed(2)}</td>
+                    <td className="py-2.5 px-3 text-right text-slate-300">{cur(pos.symbol)}{pos.averagePrice.toFixed(2)}</td>
                     <td className="py-2.5 px-3 text-right font-semibold text-white">
-                      ${pos.currentPrice.toFixed(2)}
+                      {cur(pos.symbol)}{pos.currentPrice.toFixed(2)}
                     </td>
-                    <td className="py-2.5 px-3 text-right text-slate-300">${marketVal.toFixed(2)}</td>
+                    <td className="py-2.5 px-3 text-right text-slate-300">{cur(pos.symbol)}{marketVal.toFixed(2)}</td>
                     <td
                       className={`py-2.5 px-3 text-right font-semibold ${
                         isProfitable ? 'text-emerald-400' : 'text-rose-400'
                       }`}
                     >
                       <div className="flex items-center justify-end gap-1">
-                        {isProfitable ? '+' : ''}${pos.unrealizedPnl.toFixed(2)}
+                        {isProfitable ? '+' : ''}{cur(pos.symbol)}{pos.unrealizedPnl.toFixed(2)}
                         <span className="text-[10px] opacity-80">
                           ({isProfitable ? '+' : ''}
                           {pos.unrealizedPnlPct.toFixed(2)}%)
@@ -75,7 +79,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                       {pos.stopLoss ? (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-950/60 text-rose-300 border border-rose-900/40 text-[10px]">
                           <ShieldAlert className="w-2.5 h-2.5" />
-                          ${pos.stopLoss.toFixed(2)}
+                          {cur(pos.symbol)}{pos.stopLoss.toFixed(2)}
                         </span>
                       ) : (
                         <span className="text-slate-600">---</span>
@@ -85,7 +89,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                       {pos.takeProfit ? (
                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-950/60 text-emerald-300 border border-emerald-900/40 text-[10px]">
                           <Target className="w-2.5 h-2.5" />
-                          ${pos.takeProfit.toFixed(2)}
+                          {cur(pos.symbol)}{pos.takeProfit.toFixed(2)}
                         </span>
                       ) : (
                         <span className="text-slate-600">---</span>
@@ -95,7 +99,7 @@ export const PositionsTable: React.FC<PositionsTableProps> = ({
                       <button
                         onClick={() => onClosePosition(pos.symbol)}
                         className="px-2 py-1 rounded bg-[#201524] hover:bg-rose-950 text-rose-400 hover:text-rose-300 border border-rose-900/60 text-[10px] font-semibold transition-colors"
-                        title={`Market Close ${pos.symbol}`}
+                        title={`Market Close {cur(pos.symbol)}{pos.symbol}`}
                       >
                         Close
                       </button>

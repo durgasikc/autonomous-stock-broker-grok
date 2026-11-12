@@ -25,6 +25,7 @@ interface AutonomousAgentPanelProps {
   onExecuteNow: () => void;
   onEmergencyLiquidate: () => void;
   positionsCount: number;
+  currencySymbol?: string;
 }
 
 export const AutonomousAgentPanel: React.FC<AutonomousAgentPanelProps> = ({
@@ -35,6 +36,7 @@ export const AutonomousAgentPanel: React.FC<AutonomousAgentPanelProps> = ({
   onExecuteNow,
   onEmergencyLiquidate,
   positionsCount,
+  currencySymbol = '$',
 }) => {
   const getActionColor = (action: string) => {
     switch (action) {
@@ -154,13 +156,13 @@ export const AutonomousAgentPanel: React.FC<AutonomousAgentPanelProps> = ({
             <div className="bg-[#121929] border border-rose-900/40 p-2 rounded">
               <div className="text-[10px] text-rose-400 font-semibold">STOP-LOSS (1.5x ATR)</div>
               <div className="text-sm font-bold text-white mt-0.5">
-                ${currentSignal.suggestedStopLoss.toFixed(2)}
+                {currencySymbol}{currentSignal.suggestedStopLoss.toFixed(2)}
               </div>
             </div>
             <div className="bg-[#121929] border border-emerald-900/40 p-2 rounded">
               <div className="text-[10px] text-emerald-400 font-semibold">TAKE-PROFIT TARGET</div>
               <div className="text-sm font-bold text-white mt-0.5">
-                ${currentSignal.suggestedTakeProfit.toFixed(2)}
+                {currencySymbol}{currentSignal.suggestedTakeProfit.toFixed(2)}
               </div>
             </div>
           </div>

@@ -17,6 +17,7 @@ interface TradingChartProps {
   candles: Candlestick[];
   orders: Order[];
   latestIndicators: TechnicalIndicators;
+  currencySymbol?: string;
 }
 
 export const TradingChart: React.FC<TradingChartProps> = ({
@@ -25,6 +26,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
   candles,
   orders,
   latestIndicators,
+  currencySymbol = '$',
 }) => {
   const [showBB, setShowBB] = useState(true);
   const [showEMA, setShowEMA] = useState(true);
@@ -189,7 +191,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
         <div className="flex items-center gap-3">
           <div className="flex items-baseline gap-2">
             <span className="text-xl font-bold font-mono text-white">
-              ${currentCandle ? currentCandle.close.toFixed(2) : '---'}
+              {currencySymbol}{currentCandle ? currentCandle.close.toFixed(2) : '---'}
             </span>
             <span
               className={`text-xs font-mono font-semibold flex items-center gap-0.5 ${
@@ -197,7 +199,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
               }`}
             >
               {isUp ? <TrendingUp className="w-3 h-3" /> : <TrendingDown className="w-3 h-3" />}
-              {isUp ? '+' : ''}${priceChange.toFixed(2)} ({isUp ? '+' : ''}
+              {isUp ? '+' : ''}{currencySymbol}{priceChange.toFixed(2)} ({isUp ? '+' : ''}
               {priceChangePct.toFixed(2)}%)
             </span>
           </div>
@@ -285,7 +287,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
                     fontSize="10"
                     fontFamily="monospace"
                   >
-                    ${priceVal.toFixed(2)}
+                    {currencySymbol}{priceVal.toFixed(2)}
                   </text>
                 </g>
               );
@@ -472,7 +474,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
                   fontFamily="monospace"
                   fontWeight="bold"
                 >
-                  ${currentCandle.close.toFixed(2)}
+                  {currencySymbol}{currentCandle.close.toFixed(2)}
                 </text>
               </g>
             )}
@@ -516,19 +518,19 @@ export const TradingChart: React.FC<TradingChartProps> = ({
           <div className="absolute top-3 left-4 bg-[#111726]/95 border border-cyan-800/50 p-2.5 rounded-md text-xs font-mono backdrop-blur-sm shadow-xl flex items-center gap-4 text-slate-300">
             <div>
               <span className="text-slate-500">O: </span>
-              <strong className="text-white">${hoveredCandle.open.toFixed(2)}</strong>
+              <strong className="text-white">{currencySymbol}{hoveredCandle.open.toFixed(2)}</strong>
             </div>
             <div>
               <span className="text-slate-500">H: </span>
-              <strong className="text-emerald-400">${hoveredCandle.high.toFixed(2)}</strong>
+              <strong className="text-emerald-400">{currencySymbol}{hoveredCandle.high.toFixed(2)}</strong>
             </div>
             <div>
               <span className="text-slate-500">L: </span>
-              <strong className="text-rose-400">${hoveredCandle.low.toFixed(2)}</strong>
+              <strong className="text-rose-400">{currencySymbol}{hoveredCandle.low.toFixed(2)}</strong>
             </div>
             <div>
               <span className="text-slate-500">C: </span>
-              <strong className="text-white">${hoveredCandle.close.toFixed(2)}</strong>
+              <strong className="text-white">{currencySymbol}{hoveredCandle.close.toFixed(2)}</strong>
             </div>
             <div>
               <span className="text-slate-500">Vol: </span>
@@ -575,7 +577,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
 
           <div className="hidden md:flex items-center gap-1.5">
             <span className="text-slate-500">ATR(14):</span>
-            <span className="text-slate-200">${latestIndicators.atr}</span>
+            <span className="text-slate-200">{currencySymbol}{latestIndicators.atr}</span>
           </div>
         </div>
 

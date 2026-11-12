@@ -2,13 +2,16 @@
 
 import React from 'react';
 import { Order } from '../types';
+import { getCurrencySymbol } from '../lib/marketData';
 import { Clock, CheckCircle, XCircle } from 'lucide-react';
 
 interface OrdersTableProps {
   orders: Order[];
+  currencySymbol?: string; // optional override; defaults to each order's own currency
 }
 
-export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
+export const OrdersTable: React.FC<OrdersTableProps> = ({ orders, currencySymbol }) => {
+  const cur = (sym: string) => currencySymbol ?? getCurrencySymbol(sym);
   const [isMounted, setIsMounted] = React.useState(false);
 
   React.useEffect(() => {
@@ -72,10 +75,10 @@ export const OrdersTable: React.FC<OrdersTableProps> = ({ orders }) => {
                     <td className="py-2 px-3 text-slate-300 text-[11px]">{o.type}</td>
                     <td className="py-2 px-3 text-right text-slate-200">{o.quantity}</td>
                     <td className="py-2 px-3 text-right font-semibold text-white">
-                      ${o.filledPrice?.toFixed(2) ?? '---'}
+                      {cur(o.symbol)}{o.filledPrice?.toFixed(2) ?? '---'}
                     </td>
                     <td className="py-2 px-3 text-right text-slate-400 text-[11px]">
-                      ${o.commission.toFixed(2)}
+                      {cur(o.symbol)}{o.commission.toFixed(2)}
                     </td>
                     <td className="py-2 px-3 text-center">
                       <span className="inline-flex items-center gap-1 text-[10px] text-emerald-400 font-semibold">

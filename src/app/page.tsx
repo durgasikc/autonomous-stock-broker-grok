@@ -11,7 +11,13 @@ import {
   AgentLog,
   BrokerType,
 } from '../types';
-import { WATCHLIST, generateHistoricalCandles, generateNextCandle } from '../lib/marketData';
+import {
+  WATCHLIST,
+  generateHistoricalCandles,
+  generateNextCandle,
+  fetchLiveCandles,
+  getCurrencySymbol,
+} from '../lib/marketData';
 import { computeAllIndicators } from '../lib/indicators';
 import { evaluateStrategy } from '../lib/strategyEngine';
 import { BrokerManager } from '../lib/brokers/BrokerManager';
@@ -85,6 +91,21 @@ export default function AutonomousBrokerApp() {
     ]);
   }, []);
 
+  // Fetch live candles for a symbol and swap them in (keeps current data if the feed fails)
+  const loadLive = useCallback(
+    async (sym: string) => {
+      const live = await fetchLiveCandles(sym, 80, false);
+      if (live.length === 0) return;
+      const last = live[live.length - 1];
+      brokerManager.getSimulatedBroker().updateLivePrice(sym, last.close);
+      setMarketData((prev) => ({ ...prev, [sym]: live }));
+    },
+    [brokerManager]
+  );
+
+  // Tick counter for periodic live refresh inside the engine loop
+  const tickRef = useRef(0);
+
   // Initialize market data and logs on client mount
   useEffect(() => {
     setIsMounted(true);
@@ -114,6 +135,9 @@ export default function AutonomousBrokerApp() {
       }
     }
     setMarketData(initialData);
+
+    // Replace synthetic seed with live Yahoo Finance candles where available
+    Object.keys(WATCHLIST).forEach((sym) => loadLive(sym));
 
     // Initial portfolio fetch
     brokerManager
@@ -162,6 +186,11 @@ export default function AutonomousBrokerApp() {
 
       const currentSeries = data[sym];
       if (!currentSeries || currentSeries.length === 0) return;
+
+      tickRef.current += 1;
+      if (tickRef.current % 25 === 0) {
+        loadLive(sym);
+      }
 
       const last = currentSeries[currentSeries.length - 1];
       const nextCandle = generateNextCandle(last, WATCHLIST[sym]?.volatility || 0.3);
@@ -220,7 +249,7 @@ export default function AutonomousBrokerApp() {
               level: 'SIGNAL',
               symbol: sym,
               title: `Confluence Buy Triggered (${signal.confidence}%)`,
-              message: `Evaluating ${sym} in ${signal.regime} regime. Identified high confluence entry at $${signal.price.toFixed(2)}.`,
+              message: `Evaluating ${sym} in ${signal.regime} regime. Identified high confluence entry at ${getCurrencySymbol(sym)}${signal.price.toFixed(2)}.`,
             });
 
             const orderResult = await broker.placeOrder({
@@ -237,8 +266,8 @@ export default function AutonomousBrokerApp() {
               addLog({
                 level: 'TRADE',
                 symbol: sym,
-                title: `Executed BUY ${sharesToBuy} shares @ $${orderResult.order.filledPrice}`,
-                message: `Bracket armed: Stop-loss at $${signal.suggestedStopLoss.toFixed(2)}, Take-profit at $${signal.suggestedTakeProfit.toFixed(2)}. Target R:R ${signal.riskRewardRatio}:1`,
+                title: `Executed BUY ${sharesToBuy} shares @ ${getCurrencySymbol(sym)}${orderResult.order.filledPrice}`,
+                message: `Bracket armed: Stop-loss at ${getCurrencySymbol(sym)}${signal.suggestedStopLoss.toFixed(2)}, Take-profit at ${getCurrencySymbol(sym)}${signal.suggestedTakeProfit.toFixed(2)}. Target R:R ${signal.riskRewardRatio}:1`,
               });
               const updatedSummary = await broker.getAccountSummary();
               setPortfolio(updatedSummary);
@@ -267,7 +296,7 @@ export default function AutonomousBrokerApp() {
             addLog({
               level: 'TRADE',
               symbol: sym,
-              title: `Executed SELL ${existingPosition.quantity} shares @ $${orderResult.order.filledPrice}`,
+              title: `Executed SELL ${existingPosition.quantity} shares @ ${getCurrencySymbol(sym)}${orderResult.order.filledPrice}`,
               message: `Position closed. Realized P&L recorded.`,
             });
             const updatedSummary = await broker.getAccountSummary();
@@ -278,7 +307,7 @@ export default function AutonomousBrokerApp() {
     }, 2400);
 
     return () => clearInterval(interval);
-  }, [addLog]);
+  }, [addLog, loadLive]);
 
   // Select a symbol, generating history for any ticker not yet loaded (e.g. custom or new NSE tickers)
   const handleSelectSymbol = useCallback(
@@ -293,8 +322,9 @@ export default function AutonomousBrokerApp() {
         return { ...prev, [sym]: candles };
       });
       setSelectedSymbol(sym);
+      loadLive(sym);
     },
-    [brokerManager]
+    [brokerManager, loadLive]
   );
 
   // Handle Manual "Run Strategy Now"
@@ -332,7 +362,7 @@ export default function AutonomousBrokerApp() {
           level: 'TRADE',
           symbol: selectedSymbol,
           title: `Manual Trigger: BUY ${sharesToBuy} shares`,
-          message: `Executed @ $${res.order.filledPrice}. Stop-loss: $${signal.suggestedStopLoss}`,
+          message: `Executed @ ${getCurrencySymbol(selectedSymbol)}${res.order.filledPrice}. Stop-loss: ${getCurrencySymbol(selectedSymbol)}${signal.suggestedStopLoss}`,
         });
         const summary = await broker.getAccountSummary();
         setPortfolio(summary);
@@ -375,7 +405,7 @@ export default function AutonomousBrokerApp() {
         level: 'TRADE',
         symbol: sym,
         title: `Manual Position Closed: ${sym}`,
-        message: `Liquidated @ $${res.order.filledPrice}. Trade settled.`,
+        message: `Liquidated @ ${getCurrencySymbol(sym)}${res.order.filledPrice}. Trade settled.`,
       });
       const summary = await broker.getAccountSummary();
       setPortfolio(summary);
@@ -411,6 +441,7 @@ export default function AutonomousBrokerApp() {
 
   const currentCandles = marketData[selectedSymbol] || [];
   const latestIndicators = computeAllIndicators(currentCandles);
+  const currencySymbol = getCurrencySymbol(selectedSymbol);
 
   return (
     <div className="min-h-screen bg-[#080b11] text-slate-100 flex flex-col font-sans">
@@ -438,6 +469,7 @@ export default function AutonomousBrokerApp() {
               candles={currentCandles}
               orders={portfolio.orders}
               latestIndicators={latestIndicators}
+              currencySymbol={currencySymbol}
             />
           </div>
 
@@ -469,6 +501,7 @@ export default function AutonomousBrokerApp() {
             onExecuteNow={handleExecuteNow}
             onEmergencyLiquidate={handleEmergencyLiquidate}
             positionsCount={portfolio.positions.length}
+            currencySymbol={currencySymbol}
           />
 
           {/* Real-time Streaming Activity Terminal */}

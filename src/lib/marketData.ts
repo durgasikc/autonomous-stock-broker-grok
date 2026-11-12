@@ -8,6 +8,7 @@ export interface StockMetadata {
   description: string;
   sector: string;
   market: 'US' | 'IN' | 'CUSTOM';
+  currency?: string; // ISO code reported by the live feed, e.g. 'INR'
 }
 
 export const WATCHLIST: Record<string, StockMetadata> = {
@@ -136,6 +137,37 @@ export function addCustomTicker(symbol: string, name?: string): StockMetadata {
   };
   WATCHLIST[upper] = meta;
   return meta;
+}
+
+/**
+ * Currency symbol to display for a ticker: ₹ for Indian (NSE) stocks or INR-quoted feeds, $ otherwise
+ */
+export function getCurrencySymbol(symbol: string): string {
+  const meta = WATCHLIST[symbol];
+  return meta?.market === 'IN' || meta?.currency === 'INR' ? '₹' : '$';
+}
+
+/**
+ * Fetches live hourly candles from the /api/market-data route (Yahoo Finance).
+ * Falls back to synthetic candles on failure unless fallback is false (then returns []).
+ */
+export async function fetchLiveCandles(
+  symbol: string,
+  count = 80,
+  fallback = true
+): Promise<Candlestick[]> {
+  try {
+    const res = await fetch(`/api/market-data?symbol=${encodeURIComponent(symbol)}`);
+    if (!res.ok) throw new Error(`API error ${res.status}`);
+    const data = await res.json();
+    const candles: Candlestick[] = (data.candles || []).slice(-count);
+    if (candles.length === 0) throw new Error('No candles');
+    if (WATCHLIST[symbol] && data.currency) WATCHLIST[symbol].currency = data.currency;
+    return candles;
+  } catch (err) {
+    console.warn(`Live data unavailable for ${symbol}, using synthetic candles`, err);
+    return fallback ? generateHistoricalCandles(symbol, count, 60) : [];
+  }
 }
 
 /**
