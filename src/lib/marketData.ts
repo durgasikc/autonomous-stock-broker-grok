@@ -123,6 +123,23 @@ export const WATCHLIST: Record<string, StockMetadata> = {
   },
 };
 
+// Snapshot of the hardcoded tickers, so a removed built-in can be restored with its real metadata
+const BUILTIN_META: Record<string, StockMetadata> = Object.fromEntries(
+  Object.entries(WATCHLIST).map(([k, v]) => [k, { ...v }])
+);
+
+export function isBuiltinTicker(symbol: string): boolean {
+  return Object.prototype.hasOwnProperty.call(BUILTIN_META, symbol.toUpperCase().trim());
+}
+
+/** Removes a ticker from the in-memory watchlist. Returns its metadata (or undefined if absent). */
+export function removeTicker(symbol: string): StockMetadata | undefined {
+  const upper = symbol.toUpperCase().trim();
+  const meta = WATCHLIST[upper];
+  delete WATCHLIST[upper];
+  return meta;
+}
+
 export function addCustomTicker(
   symbol: string,
   name?: string,
@@ -130,6 +147,11 @@ export function addCustomTicker(
 ): StockMetadata {
   const upper = symbol.toUpperCase().trim();
   if (WATCHLIST[upper]) return WATCHLIST[upper];
+  // Re-adding a removed built-in restores its original metadata
+  if (isBuiltinTicker(upper)) {
+    WATCHLIST[upper] = { ...BUILTIN_META[upper] };
+    return WATCHLIST[upper];
+  }
   const meta: StockMetadata = {
     symbol: upper,
     name: name || upper,

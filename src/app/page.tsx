@@ -14,6 +14,8 @@ import {
 import {
   WATCHLIST,
   addCustomTicker,
+  isBuiltinTicker,
+  removeTicker,
   fetchLiveCandles,
   getCurrencySymbol,
   tickersForMarket,
@@ -152,16 +154,18 @@ export default function AutonomousBrokerApp() {
     setMarket(startMarket);
 
     // Merge persisted custom tickers, then load live candles for every ticker (no synthetic seed)
-    fetch('/api/custom-tickers')
-      .then((r) => (r.ok ? r.json() : []))
-      .catch(() => [])
-      .then((list: StockMetadata[]) => {
-        for (const t of Array.isArray(list) ? list : []) {
+    fetch('/api/custom-tickers?full=1')
+      .then((r) => (r.ok ? r.json() : {}))
+      .catch(() => ({}))
+      .then((store: { tickers?: StockMetadata[]; hidden?: string[] }) => {
+        // Honor permanently removed built-ins, then merge persisted custom tickers
+        for (const sym of Array.isArray(store?.hidden) ? store.hidden : []) removeTicker(sym);
+        for (const t of Array.isArray(store?.tickers) ? store.tickers : []) {
           if (t?.symbol) addCustomTicker(t.symbol, t.name, t.market);
         }
         setTickerVersion((v) => v + 1);
         const first = tickersForMarket(startMarket)[0];
-        if (first) setSelectedSymbol(first);
+        setSelectedSymbol(first || '');
         Object.keys(WATCHLIST).forEach((sym) => loadLive(sym));
       });
 
@@ -355,7 +359,7 @@ export default function AutonomousBrokerApp() {
 
   // Subscribe to pushed live prices for the selected symbol; unsubscribe when it changes
   useEffect(() => {
-    if (!isMounted) return;
+    if (!isMounted || !selectedSymbol) return;
     const sym = selectedSymbol;
     const mkt = WATCHLIST[sym]?.market === 'IN' ? 'IN' : undefined;
     setLiveFeed((p) => ({ ...p, [sym]: {} }));
@@ -418,6 +422,50 @@ export default function AutonomousBrokerApp() {
     }).catch(() => {});
     setTickerVersion((v) => v + 1);
   }, []);
+
+  // Remove a ticker: custom ones are deleted from data/custom-tickers.json, built-ins are hidden
+  // permanently (data/hidden-tickers.json). Positions and orders are left untouched.
+  const handleRemoveTicker = useCallback(
+    (sym: string) => {
+      const builtin = isBuiltinTicker(sym);
+      const meta = removeTicker(sym);
+      if (!meta) return;
+      fetch(`/api/custom-tickers?symbol=${encodeURIComponent(sym)}${builtin ? '&builtin=1' : ''}`, {
+        method: 'DELETE',
+      }).catch(() => {});
+
+      // Drop per-symbol state (the WS subscription follows selectedSymbol and is released below)
+      const dropKey = <T,>(p: Record<string, T>) => {
+        if (!(sym in p)) return p;
+        const n = { ...p };
+        delete n[sym];
+        return n;
+      };
+      setMarketData(dropKey);
+      setDataStatus(dropKey);
+      setLiveFeed(dropKey);
+      setTickerVersion((v) => v + 1);
+
+      // If it was selected, move to another ticker in the same market (or none if that market is empty)
+      if (stateRef.current.selectedSymbol === sym) {
+        const mkt: 'US' | 'IN' = meta.market === 'IN' ? 'IN' : 'US';
+        const next = tickersForMarket(mkt)[0];
+        if (next) handleSelectSymbol(next);
+        else setSelectedSymbol('');
+      }
+
+      const pos = stateRef.current.portfolio.positions.find((p) => p.symbol === sym && p.quantity !== 0);
+      addLog({
+        level: 'INFO',
+        symbol: sym,
+        title: 'Ticker removed',
+        message: `${sym} removed from the ${meta.market === 'IN' ? 'IND' : 'US'} watchlist${
+          builtin ? ' (built-in, hidden permanently; re-add it to restore)' : ' (custom, deleted from saved tickers)'
+        }.${pos ? ` Open position of ${pos.quantity} shares kept; manage it from Positions.` : ''}`,
+      });
+    },
+    [addLog, handleSelectSymbol]
+  );
 
   // Handle Manual "Run Strategy Now"
   const handleExecuteNow = async () => {
@@ -566,6 +614,7 @@ export default function AutonomousBrokerApp() {
               market={market}
               onChangeMarket={handleChangeMarket}
               onTickerAdded={handleTickerAdded}
+              onRemoveTicker={handleRemoveTicker}
               dataStatus={dataStatus[selectedSymbol]}
               streamStatus={streamStatus}
               liveFeed={liveFeed[selectedSymbol]}

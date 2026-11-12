@@ -23,6 +23,7 @@ interface TradingChartProps {
   market: 'US' | 'IN';
   onChangeMarket: (market: 'US' | 'IN') => void;
   onTickerAdded?: (meta: StockMetadata) => void;
+  onRemoveTicker?: (sym: string) => void;
   dataStatus?: 'loading' | 'ok' | 'error';
   streamStatus?: 'connecting' | 'open' | 'reconnecting' | 'closed';
   liveFeed?: { error?: string; source?: 'stream' | 'poll'; marketState?: string; at?: number };
@@ -38,6 +39,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
   market,
   onChangeMarket,
   onTickerAdded,
+  onRemoveTicker,
   dataStatus,
   streamStatus,
   liveFeed,
@@ -278,14 +280,17 @@ export const TradingChart: React.FC<TradingChartProps> = ({
           {tickersForMarket(market).map((ticker) => {
             const isSelected = ticker === symbol;
             return (
-              <button
+              <div
                 key={ticker}
-                onClick={() => onSelectSymbol(ticker)}
-                className={`px-2.5 py-1 rounded text-xs font-mono font-medium transition-all ${
+                className={`group flex items-center shrink-0 rounded transition-all ${
                   isSelected
                     ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40 shadow-sm'
                     : 'bg-[#151b29] hover:bg-[#1c2438] text-slate-400 border border-transparent'
                 }`}
+              >
+              <button
+                onClick={() => onSelectSymbol(ticker)}
+                className={`pl-2.5 ${onRemoveTicker ? 'pr-0.5' : 'pr-2.5'} py-1 text-xs font-mono font-medium`}
               >
                 {ticker}
                 {WATCHLIST[ticker]?.market && (
@@ -302,6 +307,21 @@ export const TradingChart: React.FC<TradingChartProps> = ({
                   </span>
                 )}
               </button>
+              {onRemoveTicker && (
+                <button
+                  type="button"
+                  aria-label={`Remove ${ticker} from watchlist`}
+                  title={`Remove ${ticker}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    onRemoveTicker(ticker);
+                  }}
+                  className="mr-1 w-3.5 h-3.5 flex items-center justify-center rounded text-[11px] leading-none text-slate-500 opacity-0 group-hover:opacity-100 focus:opacity-100 focus:outline-none focus-visible:ring-1 focus-visible:ring-cyan-500/60 hover:text-rose-300 hover:bg-rose-500/20 transition-opacity"
+                >
+                  ×
+                </button>
+              )}
+              </div>
             );
           })}
           <form onSubmit={handleAddTicker} className="flex items-center gap-1 ml-1 shrink-0">
@@ -468,7 +488,7 @@ export const TradingChart: React.FC<TradingChartProps> = ({
                 <span className="text-xs text-slate-500">{symbol}: no candles returned from Yahoo Finance</span>
               </>
             ) : (
-              <span>Loading live data for {symbol}…</span>
+              <span>{symbol ? `Loading live data for ${symbol}…` : 'No tickers in this market — add one above'}</span>
             )}
           </div>
         )}
