@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
   // Map Indian tickers (known list, or any ticker tagged IN) to Yahoo .NS suffix
   let yahooSymbol = symbol.toUpperCase();
   const indianSymbols = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'NIFTYBEES', 'WIPRO', 'SBIN', 'HINDUNILVR', 'ITC'];
-  if ((indianSymbols.includes(yahooSymbol) || market === 'IN') && !yahooSymbol.endsWith('.NS') && !yahooSymbol.endsWith('.BO')) {
+  if ((indianSymbols.includes(yahooSymbol) || market === 'IN') && !yahooSymbol.startsWith('^') && !yahooSymbol.endsWith('.NS') && !yahooSymbol.endsWith('.BO')) {
     yahooSymbol = `${yahooSymbol}.NS`;
   }
 

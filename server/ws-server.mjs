@@ -35,7 +35,7 @@ const INDIAN_SYMBOLS = ['RELIANCE', 'TCS', 'INFY', 'HDFCBANK', 'ICICIBANK', 'NIF
 
 function toYahooSymbol(symbol, market) {
   const s = String(symbol).toUpperCase();
-  if ((INDIAN_SYMBOLS.includes(s) || market === 'IN') && !s.endsWith('.NS') && !s.endsWith('.BO')) return `${s}.NS`;
+  if ((INDIAN_SYMBOLS.includes(s) || market === 'IN') && !s.startsWith('^') && !s.endsWith('.NS') && !s.endsWith('.BO')) return `${s}.NS`;
   return s;
 }
 

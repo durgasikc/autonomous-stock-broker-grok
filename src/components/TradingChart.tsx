@@ -4,6 +4,7 @@ import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Candlestick, Order, TechnicalIndicators } from '../types';
 import { WATCHLIST, addCustomTicker, tickersForMarket } from '../lib/marketData';
 import type { StockMetadata } from '../lib/marketData';
+import type { TickerSuggestion } from '../app/api/ticker-search/route';
 import {
   calculateSMA,
   calculateEMA,
@@ -54,8 +55,112 @@ export const TradingChart: React.FC<TradingChartProps> = ({
     if (!raw) return;
     const meta = addCustomTicker(raw, undefined, market);
     setNewTicker('');
+    setSuggestOpen(false);
     onTickerAdded?.(meta);
     onSelectSymbol(meta.symbol);
+  };
+
+  // ---- Add-ticker autocomplete (Yahoo Finance search via /api/ticker-search) ----
+  const [suggestions, setSuggestions] = useState<TickerSuggestion[]>([]);
+  const [suggestOpen, setSuggestOpen] = useState(false);
+  const [suggestLoading, setSuggestLoading] = useState(false);
+  const [highlight, setHighlight] = useState(-1);
+  const [dropdownPos, setDropdownPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const searchAbortRef = useRef<AbortController | null>(null);
+
+  // Debounced (300ms) search after >= 2 chars; stale requests are aborted
+  useEffect(() => {
+    const q = newTicker.trim();
+    if (q.length < 2) {
+      searchAbortRef.current?.abort();
+      setSuggestions([]);
+      setSuggestOpen(false);
+      setSuggestLoading(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      searchAbortRef.current?.abort();
+      const ctrl = new AbortController();
+      searchAbortRef.current = ctrl;
+      setSuggestLoading(true);
+      try {
+        const res = await fetch(`/api/ticker-search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal });
+        const data = res.ok ? await res.json() : [];
+        if (ctrl.signal.aborted) return;
+        setSuggestions(Array.isArray(data) ? data : []);
+        setHighlight(-1);
+        if (document.activeElement === inputRef.current) setSuggestOpen(true);
+      } catch {
+        if (!ctrl.signal.aborted) setSuggestions([]);
+      } finally {
+        if (!ctrl.signal.aborted) setSuggestLoading(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [newTicker]);
+
+  // Position the dropdown with fixed coords (the toolbar scrolls horizontally and would clip it)
+  useEffect(() => {
+    if (!suggestOpen) return;
+    const place = () => {
+      const r = inputRef.current?.getBoundingClientRect();
+      if (r) setDropdownPos({ top: r.bottom + 4, left: r.left, width: Math.max(r.width, 300) });
+    };
+    place();
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!inputRef.current?.contains(t) && !dropdownRef.current?.contains(t)) setSuggestOpen(false);
+    };
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    document.addEventListener('mousedown', onDown);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+      document.removeEventListener('mousedown', onDown);
+    };
+  }, [suggestOpen]);
+
+  // Add a picked suggestion directly: .NS / .BO -> strip suffix and add as Indian (IN); else US
+  const addSuggestion = (sug: TickerSuggestion) => {
+    // NSE/BSE indices (e.g. ^NSEI) have no suffix but are Indian too; they keep their ^ symbol
+    const isIndian = /\.(NS|BO)$/i.test(sug.symbol) || sug.exchange === 'NSI' || sug.exchange === 'BSE';
+    const base = sug.symbol.replace(/\.(NS|BO)$/i, '').toUpperCase();
+    const mkt: 'US' | 'IN' = isIndian ? 'IN' : 'US';
+    const meta = addCustomTicker(base, sug.shortname, mkt);
+    setNewTicker('');
+    setSuggestions([]);
+    setSuggestOpen(false);
+    searchAbortRef.current?.abort();
+    onTickerAdded?.(meta);
+    if (mkt !== market) onChangeMarket(mkt); // show it under the matching US / IND list
+    onSelectSymbol(meta.symbol);
+  };
+
+  const handleTickerKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      setSuggestOpen(false);
+      return;
+    }
+    if (!suggestOpen || suggestions.length === 0) {
+      if (e.key === 'ArrowDown' && suggestions.length > 0) {
+        e.preventDefault();
+        setSuggestOpen(true);
+      }
+      return;
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlight((h) => (h + 1) % suggestions.length);
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight((h) => (h <= 0 ? suggestions.length - 1 : h - 1));
+    } else if (e.key === 'Enter' && highlight >= 0 && suggestions[highlight]) {
+      e.preventDefault(); // pick the suggestion instead of submitting the typed text
+      addSuggestion(suggestions[highlight]);
+    }
   };
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -201,8 +306,17 @@ export const TradingChart: React.FC<TradingChartProps> = ({
           })}
           <form onSubmit={handleAddTicker} className="flex items-center gap-1 ml-1 shrink-0">
             <input
+              ref={inputRef}
               value={newTicker}
               onChange={(e) => setNewTicker(e.target.value)}
+              onKeyDown={handleTickerKeyDown}
+              onFocus={() => suggestions.length > 0 && newTicker.trim().length >= 2 && setSuggestOpen(true)}
+              onBlur={() => setSuggestOpen(false)}
+              role="combobox"
+              aria-expanded={suggestOpen}
+              aria-autocomplete="list"
+              autoComplete="off"
+              spellCheck={false}
               placeholder="Add ticker e.g. GOOGL or WIPRO"
               className="w-48 px-2 py-1 rounded text-xs font-mono bg-[#151b29] border border-broker-border text-slate-200 placeholder:text-slate-500 focus:outline-none focus:border-cyan-500/60"
             />
@@ -212,6 +326,48 @@ export const TradingChart: React.FC<TradingChartProps> = ({
             >
               Add
             </button>
+            {suggestOpen && dropdownPos && (suggestions.length > 0 || suggestLoading) && (
+              <div
+                ref={dropdownRef}
+                role="listbox"
+                style={{ position: 'fixed', top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
+                className="z-50 max-h-72 overflow-y-auto rounded-md border border-broker-border bg-[#0b101b] shadow-xl shadow-black/60 py-1 font-mono text-xs"
+              >
+                {suggestions.length === 0 && suggestLoading && (
+                  <div className="px-3 py-2 text-slate-500">Searching…</div>
+                )}
+                {suggestions.map((sug, i) => {
+                  const indian = /\.(NS|BO)$/i.test(sug.symbol) || sug.exchange === 'NSI' || sug.exchange === 'BSE';
+                  return (
+                    <div
+                      key={sug.symbol}
+                      role="option"
+                      aria-selected={i === highlight}
+                      onMouseDown={(e) => e.preventDefault()} // keep input focus so blur doesn't close first
+                      onClick={() => addSuggestion(sug)}
+                      onMouseEnter={() => setHighlight(i)}
+                      className={`flex items-center gap-2 px-3 py-1.5 cursor-pointer ${
+                        i === highlight ? 'bg-cyan-500/15 text-white' : 'text-slate-300 hover:bg-slate-800/60'
+                      }`}
+                    >
+                      <span className="w-24 shrink-0 font-semibold text-cyan-200 truncate">{sug.symbol}</span>
+                      <span className="flex-1 truncate text-slate-400 font-sans">{sug.shortname}</span>
+                      {sug.quoteType !== 'EQUITY' && (
+                        <span className="text-[9px] px-1 rounded bg-purple-500/20 text-purple-300">{sug.quoteType}</span>
+                      )}
+                      <span
+                        className={`text-[9px] px-1 rounded shrink-0 ${
+                          indian ? 'bg-orange-500/20 text-orange-300' : 'bg-blue-500/20 text-blue-300'
+                        }`}
+                        title={sug.exchDisp || sug.exchange}
+                      >
+                        {indian ? 'IN · ' : ''}{sug.exchDisp || sug.exchange}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </form>
         </div>
 
