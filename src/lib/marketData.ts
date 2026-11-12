@@ -185,6 +185,7 @@ export async function fetchLiveCandles(symbol: string, count = 80): Promise<Cand
 const inflightQuotes = new Set<string>();
 
 /**
+ * REST fallback (the UI now receives live prices over the WebSocket server, see src/lib/liveSocket.ts).
  * Fetches just the latest live price (lightweight). Returns null if unavailable
  * or if a request for this symbol is already in flight (avoids piling up calls).
  */

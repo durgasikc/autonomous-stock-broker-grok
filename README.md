@@ -137,3 +137,18 @@ To use your Interactive Brokers account (Paper or Live):
 - **Circuit Breaker:** If day drawdown reaches the specified limit (e.g. 3.0%), the system immediately cuts autonomous execution.
 - **Position Allocation:** Defaults to a maximum of 15% equity per stock to ensure portfolio diversification.
 - Always test strategies thoroughly using the **Backtest Simulator** and **Paper Trading Engine** before connecting to live capital.
+
+## Live market data (WebSocket)
+
+`npm run dev` starts two processes via `concurrently`:
+
+- **next** – the Next.js app on http://localhost:3001 (`npm run dev:next` to run it alone)
+- **ws** – the market-data WebSocket server on ws://localhost:3002 (`npm run ws` to run it alone; port via `WS_PORT`)
+
+The browser loads hourly history once from `/api/market-data` (refreshed about once a minute), then
+subscribes over the WebSocket to the selected symbol (`{"action":"subscribe","symbol":"NVDA"}`, add
+`"market":"IN"` for NSE; the server appends `.NS`). The server keeps one shared upstream subscription
+per symbol to Yahoo Finance's streamer (true push), sends a chart-endpoint snapshot on subscribe, and falls
+back to polling the chart endpoint (with backoff on errors / HTTP 429) when the streamer is quiet or down.
+Only changed prices are pushed. The client reconnects automatically with exponential backoff.
+Override the client URL with `NEXT_PUBLIC_WS_URL`.

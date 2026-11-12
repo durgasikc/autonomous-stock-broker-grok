@@ -15,11 +15,12 @@ import {
   WATCHLIST,
   addCustomTicker,
   fetchLiveCandles,
-  fetchLivePrice,
   getCurrencySymbol,
   tickersForMarket,
 } from '../lib/marketData';
 import type { StockMetadata } from '../lib/marketData';
+import { liveSocket } from '../lib/liveSocket';
+import type { StreamStatus } from '../lib/liveSocket';
 import { computeAllIndicators } from '../lib/indicators';
 import { evaluateStrategy } from '../lib/strategyEngine';
 import { BrokerManager } from '../lib/brokers/BrokerManager';
@@ -43,6 +44,11 @@ export default function AutonomousBrokerApp() {
   const [dataStatus, setDataStatus] = useState<Record<string, 'loading' | 'ok' | 'error'>>({});
   const [, setTickerVersion] = useState(0); // bumps when persisted custom tickers are merged in
   const logsLoadedRef = useRef(false);
+  // WebSocket live feed state
+  const [streamStatus, setStreamStatus] = useState<StreamStatus>('closed');
+  const [liveFeed, setLiveFeed] = useState<
+    Record<string, { error?: string; source?: 'stream' | 'poll'; marketState?: string; at?: number }>
+  >({});
 
   // Autonomous Agent Configuration State
   const [autonomousEnabled, setAutonomousEnabled] = useState<boolean>(true);
@@ -232,37 +238,12 @@ export default function AutonomousBrokerApp() {
       if (!currentSeries || currentSeries.length === 0) return;
 
       tickRef.current += 1;
-      // Full history refresh about once a minute; latest live price every tick (2.4s)
+      // Live prices now arrive over the WebSocket (see effect below) and are already merged into
+      // marketData; this loop only refreshes the hourly history about once a minute and runs the strategy.
       if (tickRef.current % 25 === 0) {
         loadLive(sym);
       }
-
-      const livePrice = await fetchLivePrice(sym);
-      const last = currentSeries[currentSeries.length - 1];
-      const updated =
-        livePrice == null
-          ? currentSeries
-          : [
-              ...currentSeries.slice(0, -1),
-              { ...last, close: livePrice, high: Math.max(last.high, livePrice), low: Math.min(last.low, livePrice) },
-            ];
-
-      if (livePrice != null) {
-        // Update broker price feed and the forming candle with the real quote
-        brokerManager.getSimulatedBroker().updateLivePrice(sym, livePrice);
-        setMarketData((prev) => {
-          const series = prev[sym];
-          if (!series || series.length === 0) return prev;
-          const l = series[series.length - 1];
-          return {
-            ...prev,
-            [sym]: [
-              ...series.slice(0, -1),
-              { ...l, close: livePrice, high: Math.max(l.high, livePrice), low: Math.min(l.low, livePrice) },
-            ],
-          };
-        });
-      }
+      const updated = currentSeries;
 
       // Refresh Portfolio
       const broker = brokerManager.getBroker(brokerType);
@@ -368,6 +349,43 @@ export default function AutonomousBrokerApp() {
 
     return () => clearInterval(interval);
   }, [addLog, loadLive]);
+
+  // Track WebSocket connection status (connecting / open / reconnecting)
+  useEffect(() => liveSocket.onStatus(setStreamStatus), []);
+
+  // Subscribe to pushed live prices for the selected symbol; unsubscribe when it changes
+  useEffect(() => {
+    if (!isMounted) return;
+    const sym = selectedSymbol;
+    const mkt = WATCHLIST[sym]?.market === 'IN' ? 'IN' : undefined;
+    setLiveFeed((p) => ({ ...p, [sym]: {} }));
+    return liveSocket.subscribe(sym, mkt, (msg) => {
+      if (msg.type === 'error') {
+        setLiveFeed((p) => ({ ...p, [sym]: { error: msg.message } }));
+        // No history either -> show the "Live data unavailable" overlay
+        if (!stateRef.current.marketData[sym]?.length) setDataStatus((p) => ({ ...p, [sym]: 'error' }));
+        return;
+      }
+      const price = msg.price;
+      if (!Number.isFinite(price) || price <= 0) return;
+      brokerManager.getSimulatedBroker().updateLivePrice(sym, price);
+      setLiveFeed((p) => ({ ...p, [sym]: { source: msg.source, marketState: msg.marketState, at: msg.timestamp } }));
+      // Update the forming (latest) candle in real time
+      setMarketData((prev) => {
+        const series = prev[sym];
+        if (!series || series.length === 0) return prev;
+        const l = series[series.length - 1];
+        if (l.close === price) return prev;
+        return {
+          ...prev,
+          [sym]: [
+            ...series.slice(0, -1),
+            { ...l, close: price, high: Math.max(l.high, price), low: Math.min(l.low, price) },
+          ],
+        };
+      });
+    });
+  }, [selectedSymbol, isMounted, brokerManager]);
 
   // Select a symbol, generating history for any ticker not yet loaded (e.g. custom or new NSE tickers)
   const handleSelectSymbol = useCallback(
@@ -549,6 +567,8 @@ export default function AutonomousBrokerApp() {
               onChangeMarket={handleChangeMarket}
               onTickerAdded={handleTickerAdded}
               dataStatus={dataStatus[selectedSymbol]}
+              streamStatus={streamStatus}
+              liveFeed={liveFeed[selectedSymbol]}
             />
           </div>
 

@@ -23,6 +23,8 @@ interface TradingChartProps {
   onChangeMarket: (market: 'US' | 'IN') => void;
   onTickerAdded?: (meta: StockMetadata) => void;
   dataStatus?: 'loading' | 'ok' | 'error';
+  streamStatus?: 'connecting' | 'open' | 'reconnecting' | 'closed';
+  liveFeed?: { error?: string; source?: 'stream' | 'poll'; marketState?: string; at?: number };
 }
 
 export const TradingChart: React.FC<TradingChartProps> = ({
@@ -36,6 +38,8 @@ export const TradingChart: React.FC<TradingChartProps> = ({
   onChangeMarket,
   onTickerAdded,
   dataStatus,
+  streamStatus,
+  liveFeed,
 }) => {
   const [showBB, setShowBB] = useState(true);
   const [showEMA, setShowEMA] = useState(true);
@@ -227,6 +231,31 @@ export const TradingChart: React.FC<TradingChartProps> = ({
               {priceChangePct.toFixed(2)}%)
             </span>
           </div>
+
+          {/* WebSocket live-feed status */}
+          <span
+            title={
+              liveFeed?.error ||
+              (liveFeed?.at ? `Last update ${new Date(liveFeed.at).toLocaleTimeString()} (${liveFeed.source})` : 'WebSocket live feed')
+            }
+            className={`text-[10px] font-mono px-1.5 py-0.5 rounded border whitespace-nowrap ${
+              liveFeed?.error
+                ? 'text-rose-300 border-rose-500/40 bg-rose-500/10'
+                : streamStatus === 'open'
+                ? 'text-emerald-300 border-emerald-500/40 bg-emerald-500/10'
+                : 'text-amber-300 border-amber-500/40 bg-amber-500/10'
+            }`}
+          >
+            {liveFeed?.error
+              ? 'LIVE FEED UNAVAILABLE'
+              : streamStatus === 'open'
+              ? `● LIVE${liveFeed?.source === 'poll' ? ' · SNAPSHOT' : ''}${
+                  liveFeed?.marketState && liveFeed.marketState !== 'REGULAR' ? ` · ${liveFeed.marketState}` : ''
+                }`
+              : streamStatus === 'reconnecting'
+              ? 'RECONNECTING…'
+              : 'CONNECTING…'}
+          </span>
 
           {/* Timeframe & Overlays */}
           <div className="flex items-center gap-1 border-l border-broker-border pl-3">

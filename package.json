@@ -3,9 +3,11 @@
   "version": "1.0.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3001",
+    "dev": "concurrently -k -n next,ws -c cyan,magenta \"npm:dev:next\" \"npm:ws\"",
+    "dev:next": "next dev -p 3001",
+    "ws": "node server/ws-server.mjs",
     "build": "next build",
-    "start": "next start",
+    "start": "concurrently -k -n next,ws -c cyan,magenta \"next start -p 3001\" \"npm:ws\"",
     "lint": "next lint"
   },
   "dependencies": {
@@ -14,13 +16,16 @@
     "next": "^15.1.7",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "tailwind-merge": "^3.0.1"
+    "tailwind-merge": "^3.0.1",
+    "ws": "^8.22.2"
   },
   "devDependencies": {
     "@types/node": "^22.13.4",
     "@types/react": "^19.0.8",
     "@types/react-dom": "^19.0.3",
+    "@types/ws": "^8.18.2",
     "autoprefixer": "^10.4.20",
+    "concurrently": "^10.0.7",
     "postcss": "^8.5.2",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.3"
