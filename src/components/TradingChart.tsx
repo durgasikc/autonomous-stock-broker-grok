@@ -2,7 +2,8 @@
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { Candlestick, Order, TechnicalIndicators } from '../types';
-import { WATCHLIST, addCustomTicker } from '../lib/marketData';
+import { WATCHLIST, addCustomTicker, tickersForMarket } from '../lib/marketData';
+import type { StockMetadata } from '../lib/marketData';
 import {
   calculateSMA,
   calculateEMA,
@@ -18,6 +19,10 @@ interface TradingChartProps {
   orders: Order[];
   latestIndicators: TechnicalIndicators;
   currencySymbol?: string;
+  market: 'US' | 'IN';
+  onChangeMarket: (market: 'US' | 'IN') => void;
+  onTickerAdded?: (meta: StockMetadata) => void;
+  dataStatus?: 'loading' | 'ok' | 'error';
 }
 
 export const TradingChart: React.FC<TradingChartProps> = ({
@@ -27,6 +32,10 @@ export const TradingChart: React.FC<TradingChartProps> = ({
   orders,
   latestIndicators,
   currencySymbol = '$',
+  market,
+  onChangeMarket,
+  onTickerAdded,
+  dataStatus,
 }) => {
   const [showBB, setShowBB] = useState(true);
   const [showEMA, setShowEMA] = useState(true);
@@ -39,8 +48,9 @@ export const TradingChart: React.FC<TradingChartProps> = ({
     e.preventDefault();
     const raw = newTicker.trim();
     if (!raw) return;
-    const meta = addCustomTicker(raw);
+    const meta = addCustomTicker(raw, undefined, market);
     setNewTicker('');
+    onTickerAdded?.(meta);
     onSelectSymbol(meta.symbol);
   };
 
@@ -142,7 +152,21 @@ export const TradingChart: React.FC<TradingChartProps> = ({
       <div className="border-b border-broker-border px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 bg-[#0f1420]">
         {/* Watchlist Quick Switcher */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
-          {Object.keys(WATCHLIST).map((ticker) => {
+          {/* Market switcher */}
+          <div className="flex items-center rounded border border-broker-border overflow-hidden mr-1 shrink-0">
+            {(['US', 'IN'] as const).map((m) => (
+              <button
+                key={m}
+                onClick={() => onChangeMarket(m)}
+                className={`px-2 py-1 text-[11px] font-semibold font-mono transition-all ${
+                  market === m ? 'bg-cyan-500/25 text-cyan-200' : 'bg-[#151b29] text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                {m === 'US' ? 'US $' : 'IND ₹'}
+              </button>
+            ))}
+          </div>
+          {tickersForMarket(market).map((ticker) => {
             const isSelected = ticker === symbol;
             return (
               <button
@@ -251,6 +275,18 @@ export const TradingChart: React.FC<TradingChartProps> = ({
 
       {/* Main Candlestick Chart Area */}
       <div ref={containerRef} className="relative flex-1 min-h-[380px] bg-[#090d16] p-2">
+        {candles.length === 0 && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-sm font-mono text-slate-400">
+            {dataStatus === 'error' ? (
+              <>
+                <span className="text-rose-400">Live data unavailable for this symbol</span>
+                <span className="text-xs text-slate-500">{symbol}: no candles returned from Yahoo Finance</span>
+              </>
+            ) : (
+              <span>Loading live data for {symbol}…</span>
+            )}
+          </div>
+        )}
         {chartData && (
           <svg
             width={width}

@@ -13,11 +13,13 @@ import {
 } from '../types';
 import {
   WATCHLIST,
-  generateHistoricalCandles,
-  generateNextCandle,
+  addCustomTicker,
   fetchLiveCandles,
+  fetchLivePrice,
   getCurrencySymbol,
+  tickersForMarket,
 } from '../lib/marketData';
+import type { StockMetadata } from '../lib/marketData';
 import { computeAllIndicators } from '../lib/indicators';
 import { evaluateStrategy } from '../lib/strategyEngine';
 import { BrokerManager } from '../lib/brokers/BrokerManager';
@@ -37,6 +39,10 @@ export default function AutonomousBrokerApp() {
   // Active Symbol & Market Data State
   const [selectedSymbol, setSelectedSymbol] = useState<string>('NVDA');
   const [marketData, setMarketData] = useState<Record<string, Candlestick[]>>({});
+  const [market, setMarket] = useState<'US' | 'IN'>('US');
+  const [dataStatus, setDataStatus] = useState<Record<string, 'loading' | 'ok' | 'error'>>({});
+  const [, setTickerVersion] = useState(0); // bumps when persisted custom tickers are merged in
+  const logsLoadedRef = useRef(false);
 
   // Autonomous Agent Configuration State
   const [autonomousEnabled, setAutonomousEnabled] = useState<boolean>(true);
@@ -82,7 +88,7 @@ export default function AutonomousBrokerApp() {
 
   const addLog = useCallback((log: Omit<AgentLog, 'id' | 'timestamp'>) => {
     setLogs((prev) => [
-      ...prev.slice(-99),
+      ...prev.slice(-199),
       {
         ...log,
         id: `log_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
@@ -91,14 +97,19 @@ export default function AutonomousBrokerApp() {
     ]);
   }, []);
 
-  // Fetch live candles for a symbol and swap them in (keeps current data if the feed fails)
+  // Fetch live candles for a symbol and swap them in. No synthetic fallback: on failure the chart shows "unavailable"
   const loadLive = useCallback(
     async (sym: string) => {
-      const live = await fetchLiveCandles(sym, 80, false);
-      if (live.length === 0) return;
+      setDataStatus((p) => (p[sym] === 'ok' ? p : { ...p, [sym]: 'loading' }));
+      const live = await fetchLiveCandles(sym, 80);
+      if (live.length === 0) {
+        setDataStatus((p) => (p[sym] === 'ok' ? p : { ...p, [sym]: 'error' }));
+        return;
+      }
       const last = live[live.length - 1];
       brokerManager.getSimulatedBroker().updateLivePrice(sym, last.close);
       setMarketData((prev) => ({ ...prev, [sym]: live }));
+      setDataStatus((p) => ({ ...p, [sym]: 'ok' }));
     },
     [brokerManager]
   );
@@ -111,14 +122,14 @@ export default function AutonomousBrokerApp() {
     setIsMounted(true);
     setLogs([
       {
-        id: 'init_1',
+        id: `init_1_${Date.now()}`,
         timestamp: Date.now() - 3000,
         level: 'INFO',
         title: 'Autonomous Broker Engine Initialized',
         message: 'System online. Connected to Simulated Paper Broker. Hybrid AI quantitative engine active.',
       },
       {
-        id: 'init_2',
+        id: `init_2_${Date.now()}`,
         timestamp: Date.now() - 1500,
         level: 'INFO',
         title: 'Risk Guardrails Armed',
@@ -126,18 +137,38 @@ export default function AutonomousBrokerApp() {
       },
     ]);
 
-    const initialData: Record<string, Candlestick[]> = {};
-    for (const sym of Object.keys(WATCHLIST)) {
-      initialData[sym] = generateHistoricalCandles(sym, 80, 60);
-      const lastCandle = initialData[sym][initialData[sym].length - 1];
-      if (lastCandle) {
-        brokerManager.getSimulatedBroker().updateLivePrice(sym, lastCandle.close);
-      }
-    }
-    setMarketData(initialData);
+    // Restore market preference (US / IND)
+    let startMarket: 'US' | 'IN' = 'US';
+    try {
+      const saved = localStorage.getItem('asb.market');
+      if (saved === 'US' || saved === 'IN') startMarket = saved;
+    } catch {}
+    setMarket(startMarket);
 
-    // Replace synthetic seed with live Yahoo Finance candles where available
-    Object.keys(WATCHLIST).forEach((sym) => loadLive(sym));
+    // Merge persisted custom tickers, then load live candles for every ticker (no synthetic seed)
+    fetch('/api/custom-tickers')
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => [])
+      .then((list: StockMetadata[]) => {
+        for (const t of Array.isArray(list) ? list : []) {
+          if (t?.symbol) addCustomTicker(t.symbol, t.name, t.market);
+        }
+        setTickerVersion((v) => v + 1);
+        const first = tickersForMarket(startMarket)[0];
+        if (first) setSelectedSymbol(first);
+        Object.keys(WATCHLIST).forEach((sym) => loadLive(sym));
+      });
+
+    // Restore persisted trade/agent logs ahead of this session's startup logs
+    fetch('/api/trade-logs')
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => [])
+      .then((saved: AgentLog[]) => {
+        if (Array.isArray(saved) && saved.length > 0) {
+          setLogs((prev) => [...saved, ...prev].slice(-200));
+        }
+        logsLoadedRef.current = true;
+      });
 
     // Initial portfolio fetch
     brokerManager
@@ -145,6 +176,19 @@ export default function AutonomousBrokerApp() {
       .getAccountSummary()
       .then((summary) => setPortfolio(summary));
   }, []);
+
+  // Persist logs (last 200) shortly after they change, once saved logs have been loaded
+  useEffect(() => {
+    if (!logsLoadedRef.current) return;
+    const t = setTimeout(() => {
+      fetch('/api/trade-logs', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ logs: logs.slice(-200) }),
+      }).catch(() => {});
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [logs]);
 
   // Live state reference to prevent interval churn and hook array size changes
   const stateRef = useRef({
@@ -188,21 +232,37 @@ export default function AutonomousBrokerApp() {
       if (!currentSeries || currentSeries.length === 0) return;
 
       tickRef.current += 1;
+      // Full history refresh about once a minute; latest live price every tick (2.4s)
       if (tickRef.current % 25 === 0) {
         loadLive(sym);
       }
 
+      const livePrice = await fetchLivePrice(sym);
       const last = currentSeries[currentSeries.length - 1];
-      const nextCandle = generateNextCandle(last, WATCHLIST[sym]?.volatility || 0.3);
-      const updated = [...currentSeries.slice(1), nextCandle];
+      const updated =
+        livePrice == null
+          ? currentSeries
+          : [
+              ...currentSeries.slice(0, -1),
+              { ...last, close: livePrice, high: Math.max(last.high, livePrice), low: Math.min(last.low, livePrice) },
+            ];
 
-      // Update broker price feed
-      brokerManager.getSimulatedBroker().updateLivePrice(sym, nextCandle.close);
-
-      setMarketData((prev) => ({
-        ...prev,
-        [sym]: updated,
-      }));
+      if (livePrice != null) {
+        // Update broker price feed and the forming candle with the real quote
+        brokerManager.getSimulatedBroker().updateLivePrice(sym, livePrice);
+        setMarketData((prev) => {
+          const series = prev[sym];
+          if (!series || series.length === 0) return prev;
+          const l = series[series.length - 1];
+          return {
+            ...prev,
+            [sym]: [
+              ...series.slice(0, -1),
+              { ...l, close: livePrice, high: Math.max(l.high, livePrice), low: Math.min(l.low, livePrice) },
+            ],
+          };
+        });
+      }
 
       // Refresh Portfolio
       const broker = brokerManager.getBroker(brokerType);
@@ -312,20 +372,34 @@ export default function AutonomousBrokerApp() {
   // Select a symbol, generating history for any ticker not yet loaded (e.g. custom or new NSE tickers)
   const handleSelectSymbol = useCallback(
     (sym: string) => {
-      setMarketData((prev) => {
-        if (prev[sym] && prev[sym].length > 0) return prev;
-        const candles = generateHistoricalCandles(sym, 80, 60);
-        const lastCandle = candles[candles.length - 1];
-        if (lastCandle) {
-          brokerManager.getSimulatedBroker().updateLivePrice(sym, lastCandle.close);
-        }
-        return { ...prev, [sym]: candles };
-      });
       setSelectedSymbol(sym);
-      loadLive(sym);
+      if (!stateRef.current.marketData[sym]?.length) loadLive(sym);
     },
-    [brokerManager, loadLive]
+    [loadLive]
   );
+
+  // Switch US / IND view, persist it, and jump to a ticker from that market
+  const handleChangeMarket = useCallback(
+    (m: 'US' | 'IN') => {
+      setMarket(m);
+      try {
+        localStorage.setItem('asb.market', m);
+      } catch {}
+      const list = tickersForMarket(m);
+      if (!list.includes(stateRef.current.selectedSymbol) && list[0]) handleSelectSymbol(list[0]);
+    },
+    [handleSelectSymbol]
+  );
+
+  // Persist a newly added custom ticker
+  const handleTickerAdded = useCallback((meta: StockMetadata) => {
+    fetch('/api/custom-tickers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol: meta.symbol, name: meta.name, market: meta.market }),
+    }).catch(() => {});
+    setTickerVersion((v) => v + 1);
+  }, []);
 
   // Handle Manual "Run Strategy Now"
   const handleExecuteNow = async () => {
@@ -455,6 +529,7 @@ export default function AutonomousBrokerApp() {
         onOpenSettings={() => setIsSettingsOpen(true)}
         onOpenBacktest={() => setIsBacktestOpen(true)}
         circuitBreakerTripped={circuitBreakerTripped}
+        currencySymbol={market === 'IN' ? '₹' : '$'}
       />
 
       {/* Main Terminal Grid */}
@@ -470,6 +545,10 @@ export default function AutonomousBrokerApp() {
               orders={portfolio.orders}
               latestIndicators={latestIndicators}
               currencySymbol={currencySymbol}
+              market={market}
+              onChangeMarket={handleChangeMarket}
+              onTickerAdded={handleTickerAdded}
+              dataStatus={dataStatus[selectedSymbol]}
             />
           </div>
 

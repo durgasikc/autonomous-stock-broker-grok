@@ -17,6 +17,7 @@ import {
 import { PortfolioSummary, BrokerType, AgentMode } from '../types';
 
 interface HeaderProps {
+  currencySymbol?: string;
   portfolio: PortfolioSummary;
   autonomousEnabled: boolean;
   onToggleAutonomous: () => void;
@@ -36,6 +37,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onOpenBacktest,
   circuitBreakerTripped,
+  currencySymbol = '$',
 }) => {
   const dayPnl = portfolio.realizedPnl + portfolio.unrealizedPnl;
   const dayPnlPct = portfolio.initialCash > 0 ? (dayPnl / portfolio.initialCash) * 100 : 0;
@@ -75,7 +77,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="bg-[#131926] border border-broker-border px-3 py-1.5 rounded-md">
             <div className="text-slate-400 text-[10px] uppercase tracking-wider">Net Equity</div>
             <div className="text-sm font-semibold text-white">
-              ${portfolio.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {currencySymbol}{portfolio.equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
 
@@ -90,7 +92,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="hidden sm:block bg-[#131926] border border-broker-border px-3 py-1.5 rounded-md">
             <div className="text-slate-400 text-[10px] uppercase tracking-wider">Cash Available</div>
             <div className="text-sm font-semibold text-slate-200">
-              ${portfolio.cash.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              {currencySymbol}{portfolio.cash.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </div>
           </div>
 

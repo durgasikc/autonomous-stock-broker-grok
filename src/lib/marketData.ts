@@ -123,7 +123,11 @@ export const WATCHLIST: Record<string, StockMetadata> = {
   },
 };
 
-export function addCustomTicker(symbol: string, name?: string): StockMetadata {
+export function addCustomTicker(
+  symbol: string,
+  name?: string,
+  market: 'US' | 'IN' | 'CUSTOM' = 'CUSTOM'
+): StockMetadata {
   const upper = symbol.toUpperCase().trim();
   if (WATCHLIST[upper]) return WATCHLIST[upper];
   const meta: StockMetadata = {
@@ -133,7 +137,7 @@ export function addCustomTicker(symbol: string, name?: string): StockMetadata {
     volatility: 0.25 + Math.random() * 0.3,
     description: 'Custom ticker',
     sector: 'Custom',
-    market: 'CUSTOM',
+    market,
   };
   WATCHLIST[upper] = meta;
   return meta;
@@ -148,25 +152,57 @@ export function getCurrencySymbol(symbol: string): string {
 }
 
 /**
- * Fetches live hourly candles from the /api/market-data route (Yahoo Finance).
- * Falls back to synthetic candles on failure unless fallback is false (then returns []).
+ * Tickers belonging to a market view: 'IN' shows NSE tickers, 'US' shows US plus untagged custom tickers
  */
-export async function fetchLiveCandles(
-  symbol: string,
-  count = 80,
-  fallback = true
-): Promise<Candlestick[]> {
+export function tickersForMarket(market: 'US' | 'IN'): string[] {
+  return Object.keys(WATCHLIST).filter((t) =>
+    market === 'IN' ? WATCHLIST[t].market === 'IN' : WATCHLIST[t].market !== 'IN'
+  );
+}
+
+function marketParam(symbol: string): string {
+  return WATCHLIST[symbol]?.market === 'IN' ? '&market=IN' : '';
+}
+
+/**
+ * Fetches live hourly candles from the /api/market-data route (Yahoo Finance).
+ * Returns [] when live data is unavailable. Never substitutes synthetic data.
+ */
+export async function fetchLiveCandles(symbol: string, count = 80): Promise<Candlestick[]> {
   try {
-    const res = await fetch(`/api/market-data?symbol=${encodeURIComponent(symbol)}`);
+    const res = await fetch(`/api/market-data?symbol=${encodeURIComponent(symbol)}${marketParam(symbol)}`);
     if (!res.ok) throw new Error(`API error ${res.status}`);
     const data = await res.json();
     const candles: Candlestick[] = (data.candles || []).slice(-count);
-    if (candles.length === 0) throw new Error('No candles');
     if (WATCHLIST[symbol] && data.currency) WATCHLIST[symbol].currency = data.currency;
     return candles;
   } catch (err) {
-    console.warn(`Live data unavailable for ${symbol}, using synthetic candles`, err);
-    return fallback ? generateHistoricalCandles(symbol, count, 60) : [];
+    console.warn(`Live data unavailable for ${symbol}`, err);
+    return [];
+  }
+}
+
+const inflightQuotes = new Set<string>();
+
+/**
+ * Fetches just the latest live price (lightweight). Returns null if unavailable
+ * or if a request for this symbol is already in flight (avoids piling up calls).
+ */
+export async function fetchLivePrice(symbol: string): Promise<number | null> {
+  if (inflightQuotes.has(symbol)) return null;
+  inflightQuotes.add(symbol);
+  try {
+    const res = await fetch(`/api/market-data?symbol=${encodeURIComponent(symbol)}&quote=1${marketParam(symbol)}`, {
+      cache: 'no-store',
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    const price = Number(data.regularMarketPrice);
+    return Number.isFinite(price) && price > 0 ? price : null;
+  } catch {
+    return null;
+  } finally {
+    inflightQuotes.delete(symbol);
   }
 }
 
